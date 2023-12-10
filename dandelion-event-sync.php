@@ -21,7 +21,8 @@ register_deactivation_hook(__FILE__, 'deactivate_event_sync');
 
 // Activate the scheduled event on plugin activation
 function des_activate_event_sync() {
-    wp_schedule_event(time(), EVENT_SYNC_CRON_INTERVAL, 'des_event_sync_cron_hook');
+    $schedule_time = strtotime('today 24:00:00');
+    wp_schedule_event($schedule_time, EVENT_SYNC_CRON_INTERVAL, 'des_event_sync_cron_hook');
 }
 
 // Deactivate the scheduled event on plugin deactivation
