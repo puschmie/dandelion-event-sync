@@ -286,7 +286,7 @@ function des_sync_events_from_api() {
     $api_response = wp_remote_get($url);
 
     $feedback = array(
-        "success"           =>  bool,
+        "success"           =>  false,
         "num_posts_added"   =>  0, 
         "posts_added_titles"=>  array(), 
         "num_posts_update"  =>  0, 
