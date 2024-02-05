@@ -153,6 +153,7 @@ function des_add_thumbnail($url, $post_id){
         );
 
         // Move the temporary file into the uploads directory
+        $wp_upload_dir = wp_upload_dir(); 
         $results = wp_handle_sideload( $file, $overrides );
     
         if ( !empty( $results['error'] ) ) {
@@ -260,10 +261,16 @@ function des_get_project_topics($tags){
 //assemble post content from event description and registration form
 function des_assemble_post_content($event){
     $html_block = 
-    '<!-- wp:html -->
+    '
+    <!-- wp:paragraph -->
+    <p>
+    <!-- wp:html -->
         <iframe style="overflow: scroll; border: 0; width:100%; height: 100vh" class="dandelion-auto-height" src="'.des_make_booking_link($event["id"]).'"></iframe>
 
-    <!-- /wp:html -->';
+    <!-- /wp:html -->
+    </p>
+    <!--/wp:paragraph-->'
+    ;
 
     return $event["description"].$html_block;
 }
@@ -281,11 +288,11 @@ function des_sync_events_from_api() {
     $api_response = wp_remote_get($url);
 
     $feedback = array(
-        "success"           =>  bool,
+        "success"           =>  false,
         "num_posts_added"   =>  0, 
         "posts_added_titles"=>  array(), 
-        "num_posts_update"  =>  0, 
-        "error"             =>  WP_Error
+        "num_posts_updated"  =>  0, 
+        "error"             =>  new WP_Error()
     );
     
     if (!is_wp_error($api_response) && $api_response['response']['code'] === 200) {
