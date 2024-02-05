@@ -259,18 +259,23 @@ function des_get_project_topics($tags){
 
 //assemble post content from event description and registration form
 function des_assemble_post_content($event){
-    $html_block = 
-    '<!-- wp:html -->
-        <iframe style="overflow: scroll; border: 0; width:100%; height: 100vh" class="dandelion-auto-height" src="'.des_make_booking_link($event["id"]).'"></iframe>
 
-    <!-- /wp:html -->';
-
-    return $event["description"].$html_block;
+    $html = des_make_booking_form($event["id"]);
+    return $event["description"].$html;
 }
 
 //function to make the booking link
 function des_make_booking_link($event_id){
     return "https://dandelion.events/events/".$event_id.'/?ticket_form_only=1';
+}
+
+function des_make_booking_form($event_id){
+    $registration_form_html = 
+    '<!-- wp:html -->
+        <iframe style="overflow: scroll; border: 0; width:100%; height: 100vh" class="dandelion-auto-height" src="'.des_make_booking_link($event_id).'"></iframe>
+
+    <!-- /wp:html -->';
+    return $registration_form_html;
 }
 
 // Function to sync events from API
@@ -325,9 +330,10 @@ function des_update_event($post,$event){
     
     //update post content if it doesn't match
     if($post->post_content != des_assemble_post_content($event)){
+        $content = des_assemble_post_content($event);
         wp_update_post(array(
             'ID' => $post->ID,
-            'post_content' => $event["description"]
+            'post_content' => $content
         ));
         $updated = true;
    }
