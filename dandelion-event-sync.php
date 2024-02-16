@@ -12,27 +12,6 @@
 */
 
 
-// Define constants for cron interval
-define('EVENT_SYNC_CRON_INTERVAL', 'daily');
-
-// Register activation and deactivation hooks
-register_activation_hook(__FILE__, 'des_activate_event_sync');
-register_deactivation_hook(__FILE__, 'deactivate_event_sync');
-
-// Activate the scheduled event on plugin activation
-function des_activate_event_sync() {
-    $schedule_time = strtotime('today 24:00:00');
-    wp_schedule_event($schedule_time, EVENT_SYNC_CRON_INTERVAL, 'des_event_sync_cron_hook');
-}
-
-// Deactivate the scheduled event on plugin deactivation
-function des_deactivate_event_sync() {
-    wp_clear_scheduled_hook('des_event_sync_cron_hook');
-}
-
-// Hook into the scheduled event
-add_action('des_event_sync_cron_hook', 'des_sync_events_from_api');
-
 // Hook into admin menu to add a dashboard page
 add_action('admin_menu', 'des_event_sync_menu');
 
@@ -55,25 +34,90 @@ function des_settings(){
 }
 add_action('admin_init','des_settings');
 
+//add resize code to head
+function des_add_js_to_head(){
+    if(is_singular('event')){
+        echo '
+            <script src="//code.jquery.com/jquery-latest.js"></script>
+            <script src="//cdnjs.cloudflare.com/ajax/libs/iframe-resizer/4.2.1/iframeResizer.min.js"></script>
+            <script>
+            $(function () {
+            $(".dandelion-auto-height").iFrameResize({log: true, checkOrigin: false, heightCalculationMethod : "taggedElement"})
+            })
+            </script>
+        ';
+    }
+}
+add_action('wp_head', 'des_add_js_to_head');
+
 // Function to display the dashboard page
 function des_dashboard_page() {
     ?>
     <div class="wrap">
         <h2>Event Sync Dashboard</h2>
-        <h3>Sync Events Manually</h3>
-        <form method="post" action=<?php menu_page_url('event_sync_dashboard')?>>
-            <?php wp_nonce_field('manual_sync','manual_sync_nonce');?>
-            <?php submit_button('Sync Events Now', 'primary', 'manual_sync_submit'); ?>
+        <h3>Import Events</h3>
+        <form method="post" action=<?php echo esc_url(admin_url('admin-post.php'));?>>
+            <input type="hidden" name="action" value="manual_import">
+            <?php wp_nonce_field('manual_import','manual_import_nonce');?>
+            <?php submit_button('Import Events Now', 'primary', 'submit_manual_import'); ?>
+        </form>
+        <h3>Update Events</h3>
+        <form method="post" action=<?php echo esc_url(admin_url('admin-post.php'));?>>
+            <input type="hidden" name="action" value="manual_update">
+            <?php wp_nonce_field('manual_update','manual_update_nonce');
+            $today_date = date('Ymd');
+
+            // Dropdown for selecting an event
+            $args = array(
+                'post_type' => 'event',
+                'posts_per_page' => -1, // Retrieve all events
+                'meta_key' => 'date_time', // Replace 'event_date' with your actual ACF date field name
+                'orderby' => 'meta_value_num',
+                'order' => 'ASC',
+                'meta_query' => array(
+                    array(
+                        'key' => 'date_time', // Replace 'event_date' with your actual ACF date field name
+                        'value' => $today_date,
+                        'compare' => '>=', // Only shows events with the date today or in the future
+                        'type' => 'DATE'
+                    ),
+                ),
+            );
+            $events = new WP_Query($args);
+            if ($events->have_posts()) : ?>
+                <label>Choose the event you would like to update.</label>
+                <select name="event_id" id="event_id">
+                    <?php while ($events->have_posts()) : $events->the_post(); ?>
+                        <option value="<?php the_ID(); ?>"><?php the_title(); ?></option>
+                    <?php endwhile; ?>
+                </select>
+            <?php endif; wp_reset_postdata(); ?>
+            <?php submit_button('Update selected Event Now', 'primary', 'manual_update_submit'); ?>
         </form>
 
-      <?php  if (isset($_GET['success'])) {
-        if($_GET['success'] == 1){
-            echo '<div class="notice notice-success is-dismissible"><p>Request successful! '.$_GET['events_imported'].' events imported. '.$_GET['events_updated'].' events updated.</p></div>';
-        }else{
-            echo '<div class="notice notice-error is-dismissible"><p>Something went wrong.</p></div>';
+      <?php  
+        if (isset($_GET['success'])) {
+            if(isset($_GET['events_imported'])){
+                if($_GET['success'] == 1 && $_GET['events_imported']){
+                    echo '<div class="notice notice-success is-dismissible"><p>Request successful! '.$_GET['events_imported'].' events imported.</p></div>';
+                }
+                if($_GET['success'] == 1 && $_GET['events_imported']==0){
+                    echo '<div class="notice notice-success is-dismissible"><p>No new events to import.</p></div>';
+                }
+            }
+            if(isset($_GET['event_updated'])){
+                if($_GET['success']==1 && $_GET['event_updated']){
+                    echo '<div class="notice notice-success is-dismissible"><p>Request successful! '.$_GET['event_updated'].' event was updated: "'.$_GET['event_updated_title'].'"</p></div>';
+                }
+            }
+            if(!$_GET['success']){
+                echo '<div class="notice notice-error is-dismissible"><p>Something went wrong.</p></div>';
+    
+            }
         }
+        
        
-      } ?>
+       ?>
 
         <h3>Dandelion Account</h3>
         <form method="post" action="options.php">
@@ -94,24 +138,41 @@ function des_dashboard_page() {
     <?php
 }
 
-// Hook into form submission to manually trigger sync
-add_action('admin_post_manual_sync', 'des_handle_manual_sync');
+// Hook into form submission to manually trigger import
+add_action('admin_post_manual_import', 'des_handle_manual_import');
 
 // Function to handle manual sync form submission
-function des_handle_manual_sync() {
+function des_handle_manual_import() {
     // Check nonce for security
-
-    session_start();
-    if (isset($_SESSION['manual_sync_nonce']) && wp_verify_nonce($_SESSION['manual_sync_nonce'], 'manual_sync')) {
-      
+   
+    if ( wp_verify_nonce($_POST['manual_import_nonce'], 'manual_import')) {
+        
         // Trigger manual event sync
-          $events=des_sync_events_from_api();
-         wp_redirect(admin_url('admin.php?page=des_dashboard&success='.$events["success"].'&events_imported='.$events["num_posts_added"].'&events_updated='.$events["num_posts_updated"]));
+        $events=des_import_events();
+        wp_redirect(admin_url('admin.php?page=des_dashboard&success='.$events["success"].'&events_imported='.$events["num_posts_added"]));
        
     }else{
         wp_redirect(admin_url('admin.php?page=des_dashboard&success=0'));
     }
-    session_destroy();
+    
+    exit();
+}
+
+// Hook into form submission to manually trigger update
+add_action('admin_post_manual_update', 'des_handle_manual_update');
+
+// Function to handle manual update form submission
+function des_handle_manual_update() {
+    // Check nonce for security
+    if (wp_verify_nonce($_POST['manual_update_nonce'], 'manual_update') && isset($_POST['event_id'])) {
+        
+        // Trigger manual event update
+        $event=des_update_event($_POST['event_id']);
+         wp_redirect(admin_url('admin.php?page=des_dashboard&success='.$event["success"].'&event_updated='.$event["post_updated"].'&event_updated_title='.$event["post_updated_title"]));
+       
+    }else{
+        wp_redirect(admin_url('admin.php?page=des_dashboard&success=0'));
+    }
     
     exit();
 }
@@ -272,137 +333,145 @@ function des_make_booking_link($event_id){
 
 function des_make_booking_form($event_id){
     $registration_form_html = 
-    '<!-- wp:html -->
+    '
+    <!-- wp:html -->
+        <p>
         <iframe style="overflow: scroll; border: 0; width:100%; height: 100vh" class="dandelion-auto-height" src="'.des_make_booking_link($event_id).'"></iframe>
-
-    <!-- /wp:html -->';
+        </p>
+    <!-- /wp:html -->
+    ';
     return $registration_form_html;
 }
 
-// Function to sync events from API
-function des_sync_events_from_api() {
-    // Implement logic to fetch events from the API and sync with WordPress posts
+//Get events from API
+function des_get_events(){
+     // Implement logic to fetch events from the API and sync with WordPress posts
     // Use wp_remote_get or another HTTP library for API requests
     $url = "https://dandelion.events/o/".get_option('des_dandelion_account')."/events.json";
     $api_response = wp_remote_get($url);
+    if(!is_wp_error($api_response) && $api_response['response']['code'] === 200) {
+        $events= json_decode($api_response['body'], true); 
+       
+        return $events; 
+    }if(is_wp_error($api_response)){
+        error_log('API Request failed: '.$api_response);
+        return $api_response;
+    }
+}
+
+// Function to import events
+function des_import_events() {
 
     $feedback = array(
         "success"           =>  false,
         "num_posts_added"   =>  0, 
         "posts_added_titles"=>  array(), 
-        "num_posts_updated"  =>  0, 
-        "error"             =>  new WP_Error()
+        "error"             =>  ''
     );
-    
-    if (!is_wp_error($api_response) && $api_response['response']['code'] === 200) {
+    $events = des_get_events();   
         
-        $feedback["success"]=true;
-        $events= json_decode($api_response['body'], true);    
-        if (!empty($events) && is_array($events)) {
-            foreach ($events as $event) {
-                $title=$event['name'];
-                // Implement logic to check if the event already exists in WordPress
-                // If not, create a new post using wp_insert_post and set post meta as needed
-                // Update post content, title, meta fields, etc.
-                $post = get_page_by_title($title, OBJECT, 'event');
-               
-                if ( empty($post)){
-                    des_create_new_event($event);
-                    $feedback["num_posts_added"]++;
-                    $feedback["posts_added_titles"][] = $title;
-                }else{
-                    $updated = des_update_event($post,$event);
-                    if($updated){
-                        $feedback["num_posts_updated"]++;
-                    }
-                } 
+    if (!empty($events) && is_array($events)) {
+        foreach ($events as $event) {
+            $title=$event['name'];
+            // Implement logic to check if the event already exists in WordPress
+            // If not, create a new post using wp_insert_post and set post meta as needed
+            $post = get_page_by_title($title, OBJECT, 'event');
+            
+            if ( empty($post)){
+                des_create_new_event($event);
+                $feedback["num_posts_added"]++;
+                $feedback["posts_added_titles"][] = $title;
             }
         }
-    }if(is_wp_error($api_response)){
-        $feedback["success"]=false;
-        $feedback["error"]=$api_response;
+        $feedback["success"]=true;
+    }if(is_wp_error($events)){
+        $feedback["error"]=$events;
+        error_log('Error retrieving data: ' . $response->get_error_message());
     }
+   
     return $feedback;
 }
 
-//check if an existing post matches the data in an event retrieved from dandelion
-function des_update_event($post,$event){
-    $updated = false;
-    
-    //update post content if it doesn't match
-    if($post->post_content != des_assemble_post_content($event)){
-        $content = des_assemble_post_content($event);
-        wp_update_post(array(
-            'ID' => $post->ID,
-            'post_content' => $content
-        ));
-        $updated = true;
-   }
-   //get project and topics
-   $project_topics = des_get_project_topics($event["tags"]);
+//update events
+function des_update_event($post_id){
 
-   //assemble new acf fields array
-   $new_fields= array(
-        "date_time"=> $event["start_time"],
-        "location" => $event["location"],
-        "partner" => des_make_facilitators($event["facilitators"]),
-        "project" => $project_topics["project"],
-        "registration_link" => des_make_booking_link($event["id"])
-   );
+    $feedback = array(
+        "success"           =>  false,
+        "post_updated"   =>  false, 
+        "post_updated_title"=>  '', 
+        "error"             =>  ''
+    );
+    $post = get_post($post_id);
+    $events = des_get_events();
 
-   //get exisiting acf fields
-   $existing_acf_fields = get_fields($post->ID, false);
- 
-   //update existing acf fields if they don't match the values in the new acf fields array
-   if($existing_acf_fields){
-        foreach($new_fields as $field_name => $field_value){
-            if(!$existing_acf_fields[$field_name] || $existing_acf_fields[$field_name] != $field_value){
-                update_field($field_name, $new_fields[$field_name], $post->ID);
-                $updated = true;
-            }
+    //find the event that matches the title of the selected post
+    foreach ($events as $event) {
+        $title=$event['name'];
+        // Implement logic to check if the event already exists in WordPress
+        // If it does, update it        
+        if ($post->post_title==$title){
+            //update post content
+            $content = des_assemble_post_content($event);
+            wp_update_post(array(
+                'ID' => $post->ID,
+                'post_content' => $content
+            ));
+                    
+            
+            //get project and topics
+            $project_topics = des_get_project_topics($event["tags"]);
+
+            //assemble new acf fields array
+            $new_fields= array(
+                    "date_time"=> $event["start_time"],
+                    "location" => $event["location"],
+                    "partner" => des_make_facilitators($event["facilitators"]),
+                    "project" => $project_topics["project"],
+                    "registration_link" => des_make_booking_link($event["id"])
+            );
+
+            //get exisiting acf fields
+            $existing_acf_fields = get_fields($post->ID, false);
+            
+            //update existing acf fields if they don't match the values in the new acf fields array
+            if($existing_acf_fields){
+                    foreach($new_fields as $field_name => $field_value){
+                        if(!$existing_acf_fields[$field_name] || $existing_acf_fields[$field_name] != $field_value){
+                            update_field($field_name, $new_fields[$field_name], $post->ID);
+                        }
+                    }
+                }
+
+                //update topics
+                wp_set_post_terms($post->ID, $project_topics["topics"], 'topic');
+                
+                //check if filename of thumbnail matches slug of image url
+                $thumbnail_url = get_the_post_thumbnail_url($post->ID);
+                
+                // Check if a thumbnail exists
+                if ($thumbnail_url) {
+                    // Extract the filename from the post thumbnail URL
+                    $thumbnail_filename = basename($thumbnail_url);
+                    
+                    // Extract the slug from the API image URL
+                    $dandelion_image_slug = pathinfo($event["image"], PATHINFO_FILENAME).'.'.pathinfo($event["image"],PATHINFO_EXTENSION);
+                
+                    // Compare the filename of the post thumbnail with the slug from the API image URL
+                    if ($thumbnail_filename !== $dandelion_image_slug) {
+                    des_add_thumbnail($event["image"], $post->ID);
+                    } else {
+                        echo 'The filename does not match the slug.';
+                    }
+                }else{
+                    des_add_thumbnail($event["image"], $post->ID);
+                }
+            $feedback['success']=true;    
+            $feedback['post_updated']=true;
+            $feedback['post_updated_title']=$title;
+            break;
         }
     }
-
-    //update topics
-    wp_set_post_terms($post->ID, $project_topics["topics"], 'topic');
-     
-    //check if filename of thumbnail matches slug of image url
-    $thumbnail_url = get_the_post_thumbnail_url($post->ID);
-    
-    // Check if a thumbnail exists
-    if ($thumbnail_url) {
-        // Extract the filename from the post thumbnail URL
-        $thumbnail_filename = basename($thumbnail_url);
-        
-        // Extract the slug from the API image URL
-        $dandelion_image_slug = pathinfo($event["image"], PATHINFO_FILENAME).'.'.pathinfo($event["image"],PATHINFO_EXTENSION);
-       
-        // Compare the filename of the post thumbnail with the slug from the API image URL
-        if ($thumbnail_filename !== $dandelion_image_slug) {
-           des_add_thumbnail($event["image"], $post->ID);
-        } else {
-            echo 'The filename does not match the slug.';
-        }
-    }else{
-        des_add_thumbnail($event["image"], $post->ID);
-   
-    return $updated;
-    }
-}
-
-// Hook into WordPress init to handle manual sync button click
-add_action('init', 'des_handle_manual_sync_button_click');
-
-// Function to handle manual sync button click
-function des_handle_manual_sync_button_click() {
-    if (isset($_POST['manual_sync_submit'])) {
-        //store nonce in session variable for use in handler function
-        session_start();
-        $_SESSION['manual_sync_nonce']=$_POST['manual_sync_nonce'];
-        // Redirect to the admin-post URL to handle the form submission
-        wp_redirect(admin_url('admin-post.php?action=manual_sync'));
-        exit();
-    }
+    return $feedback;
 }
 
 
