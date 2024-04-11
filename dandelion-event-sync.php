@@ -428,7 +428,8 @@ function des_update_event($post_id){
                     "location" => $event["location"],
                     "partner" => des_make_facilitators($event["facilitators"]),
                     "project" => $project_topics["project"],
-                    "registration_link" => des_make_booking_link($event["id"])
+                    "registration_link" => des_make_booking_link($event["id"]),
+                    "end_time" => $event["end_time"]
             );
 
             //get exisiting acf fields
