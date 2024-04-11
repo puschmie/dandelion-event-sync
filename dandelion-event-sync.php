@@ -264,6 +264,7 @@ function des_create_new_event($event){
         update_field('partner', des_make_facilitators($event["facilitators"]), $post);
         update_field('location', $event["location"],$post);
         update_field('registration_link', des_make_booking_link($event["id"]), $post);
+        update_field('end_time', $event["end_time"],$post);
     } 
 
     //process tags into project and topics
