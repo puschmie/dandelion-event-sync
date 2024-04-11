@@ -1,7 +1,7 @@
 on: 
   push:
     branches:
-      - main
+      - master
 name: 🚀 Deploy Plugin on push
 jobs:
   web-deploy:
