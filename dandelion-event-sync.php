@@ -337,7 +337,7 @@ function des_make_booking_form($event_id){
     '
     <!-- wp:html -->
         <p>
-        <iframe style="overflow: scroll; border: 0; width:100%; height: 100vh" class="dandelion-auto-height" scrolling="yes" src="'.des_make_booking_link($event_id).'"></iframe>
+        <iframe style="overflow: scroll; border: 0; width:100%; height: 100%; min-height: 800px;" class="dandelion-auto-height" scrolling="yes" src="'.des_make_booking_link($event_id).'"></iframe>
         </p>
     <!-- /wp:html -->
     ';
